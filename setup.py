@@ -9,26 +9,27 @@ with open("VERSION", "r") as fh:
 
 
 setup(
-    name='cltl.template',
+    name='cltl.face-recognition',
     version=version,
     package_dir={'': 'src'},
     packages=find_namespace_packages(include=['cltl.*', 'cltl_service.*'], where='src'),
     data_files=[('VERSION', ['VERSION'])],
-    url="https://github.com/leolani/cltl-template",
+    url="https://github.com/leolani/cltl-face-recognition",
     license='MIT License',
     author='CLTL',
     author_email='t.baier@vu.nl',
-    description='Template component for Leolani',
+    description='Face recognition for Leolani',
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires='>=3.8',
-    install_requires=['cltl.combot'],
+    install_requires=['cltl.backend', 'emissor', 'numpy'],
     extras_require={
         "impl": [
-            "numpy"
+            'scikit-learn',
+            'requests',
+            'jsonpickle'
         ],
         "service": [
-            "emissor",
-            "flask"
+            'cltl.combot'
         ]}
 )
