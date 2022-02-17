@@ -1,44 +1,41 @@
 import logging
+from typing import Callable
 
-import numpy as np
+from cltl.backend.source.client_source import ClientImageSource
+from cltl.backend.spi.image import ImageSource
 from cltl.combot.infra.config import ConfigurationManager
 from cltl.combot.infra.event import Event, EventBus
 from cltl.combot.infra.resource import ResourceManager
-from cltl.combot.infra.time_util import timestamp_now
 from cltl.combot.infra.topic_worker import TopicWorker
-from cltl_service.backend.schema import TextSignalEvent
-from emissor.representation.scenario import TextSignal
-from flask import Flask, Response
-from flask.json import JSONEncoder
+from cltl_service.backend.schema import ImageSignalEvent
 
-from cltl.template.api import DemoProcessor
+from cltl.face_recognition.api import FaceDetector
+from cltl_service.face_recognition.schema import FaceRecognitionEvent
 
 logger = logging.getLogger(__name__)
 
 
-# TODO move to common util in combot
-class NumpyJSONEncoder(JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-
-        return super().default(obj)
-
-
-class TemplateService:
+class FaceRecognitionService:
     """
     Service used to integrate the component into applications.
     """
     @classmethod
-    def from_config(cls, processor: DemoProcessor, event_bus: EventBus, resource_manager: ResourceManager,
+    def from_config(cls, face_detector: FaceDetector, event_bus: EventBus, resource_manager: ResourceManager,
                     config_manager: ConfigurationManager):
-        config = config_manager.get_config("cltl.template")
+        config = config_manager.get_config("cltl.face_recognition.events")
 
-        return cls(config.get("topic_in"), config.get("topic_out"), processor, event_bus, resource_manager)
+        def image_loader(url) -> ImageSource:
+            return ClientImageSource.from_config(config_manager, url)
 
-    def __init__(self, input_topic: str, output_topic: str, processor: DemoProcessor,
+
+        return cls(config.get("image_topic"), config.get("face_topic"), face_detector, image_loader,
+                   event_bus, resource_manager)
+
+    def __init__(self, input_topic: str, output_topic: str, face_detector: FaceDetector,
+                 image_loader: Callable[[str], ImageSource],
                  event_bus: EventBus, resource_manager: ResourceManager):
-        self._processor = processor
+        self._face_detector = face_detector
+        self._image_loader = image_loader
 
         self._event_bus = event_bus
         self._resource_manager = resource_manager
@@ -62,39 +59,12 @@ class TemplateService:
         self._topic_worker.await_stop()
         self._topic_worker = None
 
-    @property
-    def app(self):
-        """
-        Flask endpoint for REST interface.
-        """
-        if self._app:
-            return self._app
+    def _process(self, event: Event[ImageSignalEvent]):
+        image_location = event.payload.signal.files[0]
 
-        self._app = Flask("audio_storage")
-        self._app.json_encoder = NumpyJSONEncoder
+        with self._image_loader(image_location) as source:
+            image = source.capture()
+        faces, bounds = self._face_detector.detect(image.image)
 
-        @self._app.route(f"/template/<paramter>", methods=['GET'])
-        def store_audio(parameter: str):
-            return Response(status=200)
-
-        @self._app.after_request
-        def set_cache_control(response):
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
-
-            return response
-
-        return self._app
-
-    def _process(self, event: Event[TextSignalEvent]):
-        response = self._processor.respond(event.payload.signal.text)
-
-        if response:
-            eliza_event = self._create_payload(response)
-            self._event_bus.publish(self._output_topic, Event.for_payload(eliza_event))
-
-    def _create_payload(self, response):
-        signal = TextSignal.for_scenario(None, timestamp_now(), timestamp_now(), None, response)
-
-        return TextSignalEvent.create(signal)
+        face_event = FaceRecognitionEvent.create(event.payload.signal, faces, bounds)
+        self._event_bus.publish(self._output_topic, Event.for_payload(face_event))

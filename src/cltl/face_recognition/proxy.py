@@ -1,5 +1,5 @@
 import logging
-from typing import Iterable
+from typing import Iterable, Tuple
 
 import jsonpickle
 import numpy as np
@@ -7,13 +7,12 @@ import requests
 from cltl.backend.api.camera import Bounds
 from emissor.representation.entity import Gender
 
-from cltl.face_recognition.api import Face
+from cltl.face_recognition.api import Face, FaceDetector
 from cltl.face_recognition.docker import DockerInfra
 
 
-class FaceDetectorProxy:
-    def __init__(self, base_path: str, port_docker_face_analysis: int, run_on_gpu: int):
-        self._base_path = base_path
+class FaceDetectorProxy(FaceDetector):
+    def __init__(self, port_docker_face_analysis: int, run_on_gpu: int):
         self.face_infra = DockerInfra('face-analysis-cuda' if run_on_gpu else 'face-analysis',
                                       port_docker_face_analysis, 30000, run_on_gpu, 30)
 
@@ -24,7 +23,7 @@ class FaceDetectorProxy:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.face_infra.__exit__(exc_type, exc_val, exc_tb)
 
-    def detect(self, image: np.ndarray) -> Iterable[Face]:
+    def detect(self, image: np.ndarray) -> Tuple[Iterable[Face], Iterable[Bounds]]:
         logging.info("Processing image %s")
 
         data = jsonpickle.encode({'image': image})
@@ -37,9 +36,9 @@ class FaceDetectorProxy:
 
         response = jsonpickle.decode(response.text)
 
-        return map(self.to_face, response['fa_results'])
+        return zip(*map(self._to_face, response['fa_results']))
 
-    def to_face(self, face_result):
+    def _to_face(self, face_result) -> Tuple[Face, Bounds]:
         bbox = [int(num) for num in face_result['bbox'].tolist()]
         representation = face_result['normed_embedding']
         if 'gender' in face_result['gender'] and face_result['gender'] == 1:
@@ -50,5 +49,5 @@ class FaceDetectorProxy:
             gender = None
         age = face_result['age']
 
-        return Face(Bounds(bbox[0], bbox[2], bbox[1], bbox[3]), representation, gender, age)
+        return Face(representation, gender, age), Bounds(bbox[0], bbox[2], bbox[1], bbox[3])
 
