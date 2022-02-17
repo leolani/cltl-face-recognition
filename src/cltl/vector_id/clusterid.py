@@ -21,14 +21,22 @@ class ClusterIdentity(VectorIdentity):
 
         return cls(ac, ndim)
 
-    def __init__(self, clustering, ndim: int, distance_threshold):
+    def __init__(self, clustering, ndim: int):
         self._clustering = clustering
-        self._distance_threshold = distance_threshold
         self._centroids = dict()
-        self._representations = np.empty((0, ndim))
+        self._representations = np.empty((0, ndim)) if ndim else None
 
     def add(self, representations: np.ndarray) -> List[str]:
-        self._representations = np.vstack([self._representations, representations])
+        if self._representations is None:
+            self._representations = np.atleast_2d(representations)
+        else:
+            self._representations = np.vstack([self._representations, representations])
+
+        if len(self._representations) == 1:
+            id = str(uuid.uuid4())
+            self._centroids = {id: normalize(self._representations)[0]}
+
+            return [id]
 
         cluster_ids = self._cluster_representations(self._centroids, self._representations)
 
@@ -37,7 +45,7 @@ class ClusterIdentity(VectorIdentity):
                                              normalize(self._representations)])
         self._centroids = {id: self._centroid(labeled_representations, label) for id, label in id_map.items()}
 
-        return cluster_ids
+        return cluster_ids[-len(representations):]
 
     def _centroid(self, labeled_representations: np.array, label: int):
         mask = (labeled_representations[:, 0] == label)

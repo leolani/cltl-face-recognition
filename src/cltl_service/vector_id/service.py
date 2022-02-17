@@ -1,41 +1,31 @@
 import logging
 
-import numpy as np
 from cltl.combot.infra.config import ConfigurationManager
 from cltl.combot.infra.event import Event, EventBus
 from cltl.combot.infra.resource import ResourceManager
-from cltl.combot.infra.time_util import timestamp_now
 from cltl.combot.infra.topic_worker import TopicWorker
-from cltl_service.backend.schema import TextSignalEvent
-from emissor.representation.scenario import TextSignal
-from flask.json import JSONEncoder
+
+from cltl.vector_id.api import VectorIdentity
+from cltl_service.face_recognition.schema import FaceRecognitionEvent
+from cltl_service.vector_id.schema import VectorIdentityEvent
 
 logger = logging.getLogger(__name__)
 
 
-# TODO move to common util in combot
-class NumpyJSONEncoder(JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-
-        return super().default(obj)
-
-
-class TemplateService:
+class VectorIdService:
     """
     Service used to integrate the component into applications.
     """
     @classmethod
-    def from_config(cls, processor: DemoProcessor, event_bus: EventBus, resource_manager: ResourceManager,
+    def from_config(cls, vector_id: VectorIdentity, event_bus: EventBus, resource_manager: ResourceManager,
                     config_manager: ConfigurationManager):
-        config = config_manager.get_config("cltl.template")
+        config = config_manager.get_config("cltl.vector-id.events")
 
-        return cls(config.get("topic_in"), config.get("topic_out"), processor, event_bus, resource_manager)
+        return cls(config.get("face_topic"), config.get("id_topic"), vector_id, event_bus, resource_manager)
 
-    def __init__(self, input_topic: str, output_topic: str, processor: DemoProcessor,
+    def __init__(self, input_topic: str, output_topic: str,  vector_id: VectorIdentity,
                  event_bus: EventBus, resource_manager: ResourceManager):
-        self._processor = processor
+        self._vector_id = vector_id
 
         self._event_bus = event_bus
         self._resource_manager = resource_manager
@@ -59,14 +49,15 @@ class TemplateService:
         self._topic_worker.await_stop()
         self._topic_worker = None
 
-    def _process(self, event: Event[TextSignalEvent]):
-        response = self._processor.respond(event.payload.signal.text)
+    def _process(self, event: Event[FaceRecognitionEvent]):
+        if len(event.payload.mentions) == 0:
+            return
 
-        if response:
-            eliza_event = self._create_payload(response)
-            self._event_bus.publish(self._output_topic, Event.for_payload(eliza_event))
+        representations = [annotation.embedding
+                           for mention in event.payload.mentions
+                           for annotation in mention.annotations]
+        segments = [mention.segment for mention in event.payload.mentions]
+        ids = self._vector_id.add(representations)
 
-    def _create_payload(self, response):
-        signal = TextSignal.for_scenario(None, timestamp_now(), timestamp_now(), None, response)
-
-        return TextSignalEvent.create(signal)
+        id_payload = VectorIdentityEvent.create(segments, ids)
+        self._event_bus.publish(self._output_topic, Event.for_payload(id_payload))

@@ -25,11 +25,14 @@ setup(
     install_requires=['cltl.backend', 'emissor', 'numpy'],
     extras_require={
         "impl": [
+            'cltl.backend',
             'scikit-learn',
             'requests',
-            'jsonpickle'
+            'jsonpickle',
+            'python_on_whales'
         ],
         "service": [
-            'cltl.combot'
+            'cltl.combot',
+            'cltl.backend[impl]',
         ]}
 )
