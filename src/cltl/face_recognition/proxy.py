@@ -1,53 +1,126 @@
-import logging
-from typing import Iterable, Tuple
+from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 
+import cv2
 import jsonpickle
+import logging
 import numpy as np
+import pickle
 import requests
 from cltl.backend.api.camera import Bounds
 from emissor.representation.entity import Gender
+from typing import Iterable, Tuple
 
 from cltl.face_recognition.api import Face, FaceDetector
 from cltl.face_recognition.docker import DockerInfra
 
+FaceInfo = namedtuple('FaceInfo', ('gender',
+                                   'age',
+                                   'bbox',
+                                   'embedding'))
+
 
 class FaceDetectorProxy(FaceDetector):
-    def __init__(self, port_docker_face_analysis: int, run_on_gpu: int):
-        self.face_infra = DockerInfra('face-analysis-cuda' if run_on_gpu else 'face-analysis',
-                                      port_docker_face_analysis, 30000, run_on_gpu, 30)
+    def __init__(self):
+        self.detect_infra = DockerInfra('tae898/face-detection-recognition', 10002, 10002, False, 15)
+        self.age_gender_infra = DockerInfra('tae898/age-gender', 10003, 10003, False, 15)
 
     def __enter__(self):
-        self.face_infra.__enter__()
+        executor = ThreadPoolExecutor(max_workers=2)
+        detect = executor.submit(self.detect_infra.__enter__)
+        age_gender = executor.submit(self.age_gender_infra.__enter__)
+
+        detect.result()
+        age_gender.result()
+        executor.shutdown()
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.face_infra.__exit__(exc_type, exc_val, exc_tb)
+        executor = ThreadPoolExecutor(max_workers=2)
+        detect = executor.submit(lambda: self.detect_infra.__exit__(exc_type, exc_val, exc_tb))
+        age_gender = executor.submit(lambda: self.age_gender_infra.__exit__(exc_type, exc_val, exc_tb))
+
+        detect.result()
+        age_gender.result()
+        executor.shutdown()
 
     def detect(self, image: np.ndarray) -> Tuple[Iterable[Face], Iterable[Bounds]]:
-        logging.info("Processing image %s")
+        logging.info("Processing image %s", image.shape)
 
-        data = jsonpickle.encode({'image': image})
-        response = requests.post(
-            f"{'http://127.0.0.1'}:{self.face_infra.host_port}/", json=data)
-        if response.ok:
-            logging.info("%s received", response)
+        face_infos = self.detect_faces(image)
+        if face_infos:
+            faces, bounds = zip(*map(self._to_face, face_infos))
         else:
-            raise ValueError(f"{response} received with reason {response.reason}")
+            faces, bounds = (), ()
 
-        response = jsonpickle.decode(response.text)
+        return faces, bounds
 
-        return zip(*map(self._to_face, response['fa_results']))
-
-    def _to_face(self, face_result) -> Tuple[Face, Bounds]:
-        bbox = [int(num) for num in face_result['bbox'].tolist()]
-        representation = face_result['normed_embedding']
-        if 'gender' in face_result['gender'] and face_result['gender'] == 1:
-            gender = Gender.MALE
-        elif 'gender' in face_result['gender'] and face_result['gender'] is not None:
-            gender = Gender.FEMALE
-        else:
-            gender = None
-        age = face_result['age']
+    def _to_face(self, face_info: FaceInfo) -> Tuple[Face, Bounds]:
+        bbox = [int(num) for num in face_info.bbox.tolist()]
+        representation = face_info.embedding
+        gender = Gender.MALE if face_info.gender["m"] > 0.5 else Gender.FEMALE
+        age = round(face_info.age["mean"])
 
         return Face(representation, gender, age), Bounds(bbox[0], bbox[2], bbox[1], bbox[3])
 
+    def to_binary_image(self, image: np.ndarray) -> bytes:
+        is_success, buffer = cv2.imencode(".png", image)
+
+        if not is_success:
+            raise ValueError("Could not encode image")
+
+        return buffer
+
+    def run_face_api(self, to_send: dict, url_face: str = "http://127.0.0.1:10002/") -> tuple:
+        logging.debug(f"sending image to server...")
+        to_send = jsonpickle.encode(to_send)
+        response = requests.post(url_face, json=to_send)
+        logging.info(f"got {response} from server!...")
+
+        response = jsonpickle.decode(response.text)
+
+        face_detection_recognition = response["face_detection_recognition"]
+        logging.info(f"{len(face_detection_recognition)} faces deteced!")
+
+        face_bboxes = [fdr["bbox"] for fdr in face_detection_recognition]
+        det_scores = [fdr["det_score"] for fdr in face_detection_recognition]
+        landmarks = [fdr["landmark"] for fdr in face_detection_recognition]
+
+        embeddings = [fdr["normed_embedding"] for fdr in face_detection_recognition]
+
+        return face_bboxes, det_scores, landmarks, embeddings
+
+
+    def run_age_gender_api(self,
+        embeddings: list, url_age_gender: str = "http://127.0.0.1:10003/"
+    ) -> tuple:
+        # -1 accounts for the batch size.
+        data = np.array(embeddings).reshape(-1, 512).astype(np.float32)
+        data = pickle.dumps(data)
+
+        data = {"embeddings": data}
+        data = jsonpickle.encode(data)
+        logging.debug(f"sending embeddings to server ...")
+        response = requests.post(url_age_gender, json=data)
+        logging.info(f"got {response} from server!...")
+
+        response = jsonpickle.decode(response.text)
+        ages = response["ages"]
+        genders = response["genders"]
+
+        return ages, genders
+
+    def detect_faces(self,
+        image: np.ndarray,
+        url_face: str = "http://127.0.0.1:10002/",
+        url_age_gender: str = "http://127.0.0.1:10003/",
+    ) -> Tuple[FaceInfo]:
+        face_bboxes, det_scores, landmarks, embeddings = self.run_face_api({"image": self.to_binary_image(image)}, url_face)
+
+        ages, genders = self.run_age_gender_api(embeddings, url_age_gender)
+
+        return tuple(FaceInfo(*info) for info in zip(genders,
+                                              ages,
+                                              face_bboxes,
+                                              embeddings))

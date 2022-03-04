@@ -42,3 +42,9 @@ class FaceDetector(abc.ABC):
             The positions of the detected faces in the image.
         """
         raise NotImplementedError()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass

@@ -47,6 +47,7 @@ class FaceRecognitionService:
         self._app = None
 
     def start(self, timeout=30):
+        self._face_detector.__enter__()
         self._topic_worker = TopicWorker([self._input_topic], self._event_bus, provides=[self._output_topic],
                                          resource_manager=self._resource_manager, processor=self._process)
         self._topic_worker.start().wait()
@@ -58,6 +59,7 @@ class FaceRecognitionService:
         self._topic_worker.stop()
         self._topic_worker.await_stop()
         self._topic_worker = None
+        self._face_detector.__exit__(None, None, None)
 
     def _process(self, event: Event[ImageSignalEvent]):
         image_location = event.payload.signal.files[0]
@@ -66,5 +68,8 @@ class FaceRecognitionService:
             image = source.capture()
         faces, bounds = self._face_detector.detect(image.image)
 
-        face_event = FaceRecognitionEvent.create(event.payload.signal, faces, bounds)
-        self._event_bus.publish(self._output_topic, Event.for_payload(face_event))
+        if faces:
+            face_event = FaceRecognitionEvent.create(event.payload.signal, faces, bounds)
+            self._event_bus.publish(self._output_topic, Event.for_payload(face_event))
+        else:
+            logger.debug("No faces detected in image signal %s", event.payload.signal.id)

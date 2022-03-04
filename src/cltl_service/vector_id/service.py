@@ -19,7 +19,7 @@ class VectorIdService:
     @classmethod
     def from_config(cls, vector_id: VectorIdentity, event_bus: EventBus, resource_manager: ResourceManager,
                     config_manager: ConfigurationManager):
-        config = config_manager.get_config("cltl.vector-id.events")
+        config = config_manager.get_config("cltl.vector_id.events")
 
         return cls(config.get("face_topic"), config.get("id_topic"), vector_id, event_bus, resource_manager)
 
@@ -53,7 +53,7 @@ class VectorIdService:
         if len(event.payload.mentions) == 0:
             return
 
-        representations = [annotation.embedding
+        representations = [annotation.value.embedding
                            for mention in event.payload.mentions
                            for annotation in mention.annotations]
         segments = [mention.segment for mention in event.payload.mentions]

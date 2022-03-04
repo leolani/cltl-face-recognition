@@ -1,8 +1,10 @@
+import uuid
+
 from dataclasses import dataclass
 from typing import Iterable, List
 
 from cltl.combot.infra.time_util import timestamp_now
-from cltl_service.backend.schema import AnnotationEvent
+from cltl.combot.event.emissor import AnnotationEvent
 from emissor.representation.container import Ruler
 from emissor.representation.scenario import Mention, Annotation
 
@@ -18,7 +20,7 @@ class VectorIdentityEvent(AnnotationEvent[Annotation[str]]):
             ts = timestamp if timestamp is not None else timestamp_now()
             annotation = Annotation(VectorIdentity.__name__, seg_id[1], source, ts)
 
-            return Mention([seg_id[0]], [annotation])
+            return Mention(str(uuid.uuid4()), [seg_id[0]], [annotation])
 
         seg_ids = zip(segments, ids)
 
