@@ -26,6 +26,7 @@ setup(
     extras_require={
         "impl": [
             'cltl.backend',
+            'opencv-python',
             'scikit-learn',
             'requests',
             'jsonpickle',
@@ -34,5 +35,9 @@ setup(
         "service": [
             'cltl.combot',
             'cltl.backend[impl]',
-        ]}
+        ],
+        "test": [
+            'matplotlib',
+        ]
+    }
 )
