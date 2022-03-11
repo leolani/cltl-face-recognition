@@ -13,10 +13,22 @@ from cltl.face_recognition.api import Face
 class FaceRecognitionEvent(AnnotationEvent[Annotation[Face]]):
     @classmethod
     def create(cls, image_signal: ImageSignal, faces: Iterable[Face], bounds: Iterable[Bounds]):
-        def to_mention(face, bounds):
-            segment = image_signal.ruler.get_area_bounding_box(bounds.x0, bounds.y0, bounds.x1, bounds.y1)
-            annotation = Annotation(Face.__name__, face, __name__, timestamp_now())
+        if faces:
+            mentions = [FaceRecognitionEvent.to_mention(image_signal, face, bound)
+                        for face, bound in zip(faces, bounds)]
+        else:
+            mentions = [FaceRecognitionEvent.to_mention(image_signal)]
 
-            return Mention(str(uuid.uuid4()), [segment], [annotation])
+        return cls(cls.__name__, mentions)
 
-        return cls(cls.__name__, [to_mention(face, bound) for face, bound in zip(faces, bounds)])
+    @staticmethod
+    def to_mention(image_signal: ImageSignal, face: Face = None, bounds: Bounds = None):
+        segment = image_signal.ruler
+        if bounds:
+            clipped = Bounds(segment.bounds[0], segment.bounds[2],
+                             segment.bounds[1], segment.bounds[3]).intersection(bounds)
+            segment = segment.get_area_bounding_box(clipped.x0, clipped.y0, clipped.x1, clipped.y1)
+
+        annotation = Annotation(Face.__name__, face, __name__, timestamp_now())
+
+        return Mention(str(uuid.uuid4()), [segment], [annotation])

@@ -56,7 +56,9 @@ class VectorIdService:
         representations = [annotation.value.embedding
                            for mention in event.payload.mentions
                            for annotation in mention.annotations]
-        segments = [mention.segment for mention in event.payload.mentions]
+        segments = [segment
+                    for mention in event.payload.mentions
+                    for segment in mention.segment]
         ids = self._vector_id.add(representations)
 
         id_payload = VectorIdentityEvent.create(segments, ids)

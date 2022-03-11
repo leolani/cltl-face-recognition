@@ -68,8 +68,5 @@ class FaceRecognitionService:
             image = source.capture()
         faces, bounds = self._face_detector.detect(image.image)
 
-        if faces:
-            face_event = FaceRecognitionEvent.create(event.payload.signal, faces, bounds)
-            self._event_bus.publish(self._output_topic, Event.for_payload(face_event))
-        else:
-            logger.debug("No faces detected in image signal %s", event.payload.signal.id)
+        face_event = FaceRecognitionEvent.create(event.payload.signal, faces, bounds)
+        self._event_bus.publish(self._output_topic, Event.for_payload(face_event))
