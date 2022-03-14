@@ -1,3 +1,4 @@
+import time
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
 
@@ -74,9 +75,10 @@ class FaceDetectorProxy(FaceDetector):
 
     def run_face_api(self, to_send: dict, url_face: str = "http://127.0.0.1:10002/") -> tuple:
         logging.debug(f"sending image to server...")
+        start = time.time()
         to_send = jsonpickle.encode(to_send)
         response = requests.post(url_face, json=to_send)
-        logging.info(f"got {response} from server!...")
+        logging.info("got %s from server in %s sec", response, time.time()-start)
 
         response = jsonpickle.decode(response.text)
 
@@ -102,8 +104,9 @@ class FaceDetectorProxy(FaceDetector):
         data = {"embeddings": data}
         data = jsonpickle.encode(data)
         logging.debug(f"sending embeddings to server ...")
+        start = time.time()
         response = requests.post(url_age_gender, json=data)
-        logging.info(f"got {response} from server!...")
+        logging.info("got %s from server in %s sec", response, time.time()-start)
 
         response = jsonpickle.decode(response.text)
         ages = response["ages"]
