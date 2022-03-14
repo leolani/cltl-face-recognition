@@ -50,16 +50,17 @@ class VectorIdService:
         self._topic_worker = None
 
     def _process(self, event: Event[FaceRecognitionEvent]):
-        if len(event.payload.mentions) == 0:
-            return
-
         representations = [annotation.value.embedding
                            for mention in event.payload.mentions
-                           for annotation in mention.annotations]
-        segments = [segment
-                    for mention in event.payload.mentions
-                    for segment in mention.segment]
-        ids = self._vector_id.add(representations)
+                           for annotation in mention.annotations
+                           if annotation.value]
 
-        id_payload = VectorIdentityEvent.create(segments, ids)
-        self._event_bus.publish(self._output_topic, Event.for_payload(id_payload))
+        if representations:
+            segments = [segment
+                        for mention in event.payload.mentions
+                        for segment in mention.segment]
+
+            ids = self._vector_id.add(representations)
+
+            id_payload = VectorIdentityEvent.create(segments, ids)
+            self._event_bus.publish(self._output_topic, Event.for_payload(id_payload))
