@@ -13,7 +13,7 @@ from emissor.representation.entity import Gender
 from typing import Iterable, Tuple
 
 from cltl.face_recognition.api import Face, FaceDetector
-from cltl.face_recognition.docker import DockerInfra
+from cltl.combot.infra.docker import DockerInfra
 
 FaceInfo = namedtuple('FaceInfo', ('gender',
                                    'age',
