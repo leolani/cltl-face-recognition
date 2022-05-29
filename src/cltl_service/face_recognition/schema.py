@@ -23,6 +23,10 @@ class FaceRecognitionEvent(AnnotationEvent[Annotation[Face]]):
 
     @staticmethod
     def to_mention(image_signal: ImageSignal, face: Face = None, bounds: Bounds = None):
+        """
+        Create Mention with face annotations. If no face is detected, annotate the whole
+        image with Face Annotation with value None.
+        """
         segment = image_signal.ruler
         if bounds:
             clipped = Bounds(segment.bounds[0], segment.bounds[2],
