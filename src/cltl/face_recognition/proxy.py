@@ -15,6 +15,9 @@ from typing import Iterable, Tuple
 from cltl.face_recognition.api import Face, FaceDetector
 from cltl.combot.infra.docker import DockerInfra
 
+logger = logging.getLogger(__name__)
+
+
 FaceInfo = namedtuple('FaceInfo', ('gender',
                                    'age',
                                    'bbox',
@@ -47,7 +50,7 @@ class FaceDetectorProxy(FaceDetector):
         executor.shutdown()
 
     def detect(self, image: np.ndarray) -> Tuple[Iterable[Face], Iterable[Bounds]]:
-        logging.info("Processing image %s", image.shape)
+        logger.info("Processing image %s", image.shape)
 
         face_infos = self.detect_faces(image)
         if face_infos:
@@ -74,16 +77,16 @@ class FaceDetectorProxy(FaceDetector):
         return buffer
 
     def run_face_api(self, to_send: dict, url_face: str = "http://127.0.0.1:10002/") -> tuple:
-        logging.debug(f"sending image to server...")
+        logger.debug(f"sending image to server...")
         start = time.time()
         to_send = jsonpickle.encode(to_send)
         response = requests.post(url_face, json=to_send)
-        logging.info("got %s from server in %s sec", response, time.time()-start)
+        logger.info("got %s from server in %s sec", response, time.time()-start)
 
         response = jsonpickle.decode(response.text)
 
         face_detection_recognition = response["face_detection_recognition"]
-        logging.info(f"{len(face_detection_recognition)} faces deteced!")
+        logger.info(f"{len(face_detection_recognition)} faces deteced!")
 
         face_bboxes = [fdr["bbox"] for fdr in face_detection_recognition]
         det_scores = [fdr["det_score"] for fdr in face_detection_recognition]
@@ -103,10 +106,10 @@ class FaceDetectorProxy(FaceDetector):
 
         data = {"embeddings": data}
         data = jsonpickle.encode(data)
-        logging.debug(f"sending embeddings to server ...")
+        logger.debug(f"sending embeddings to server ...")
         start = time.time()
         response = requests.post(url_age_gender, json=data)
-        logging.info("got %s from server in %s sec", response, time.time()-start)
+        logger.info("got %s from server in %s sec", response, time.time()-start)
 
         response = jsonpickle.decode(response.text)
         ages = response["ages"]
@@ -123,7 +126,4 @@ class FaceDetectorProxy(FaceDetector):
 
         ages, genders = self.run_age_gender_api(embeddings, url_age_gender)
 
-        return tuple(FaceInfo(*info) for info in zip(genders,
-                                              ages,
-                                              face_bboxes,
-                                              embeddings))
+        return tuple(FaceInfo(*info) for info in zip(genders, ages, face_bboxes, embeddings))
