@@ -25,13 +25,20 @@ FaceInfo = namedtuple('FaceInfo', ('gender',
 
 
 class FaceDetectorProxy(FaceDetector):
-    def __init__(self, start_infra: bool = True):
+    def __init__(self, start_infra: bool = True, detector_url: str = None, age_gender_url: str = None):
         if start_infra:
             self.detect_infra = DockerInfra('tae898/face-detection-recognition', 10002, 10002, False, 15)
             self.age_gender_infra = DockerInfra('tae898/age-gender', 10003, 10003, False, 15)
+            self._detector_url = "http://127.0.0.1:10002/"
+            self._age_gender_url = "http://127.0.0.1:10003/"
         else:
             self.detect_infra = None
             self.age_gender_infra = None
+            self._detector_url = detector_url
+            self._age_gender_url = age_gender_url
+
+        if not self._detector_url or not self._age_gender_url:
+            raise ValueError("No url defined for docker images: " + self._detector_url + ", " + self._age_gender_url)
 
     def __enter__(self):
         if self.detect_infra:
@@ -82,11 +89,12 @@ class FaceDetectorProxy(FaceDetector):
 
         return buffer
 
-    def run_face_api(self, to_send: dict, url_face: str = "http://127.0.0.1:10002/") -> tuple:
+    def run_face_api(self, to_send: dict) -> tuple:
         logger.debug(f"sending image to server...")
+
         start = time.time()
         to_send = jsonpickle.encode(to_send)
-        response = requests.post(url_face, json=to_send)
+        response = requests.post(self._detector_url, json=to_send)
         logger.info("got %s from server in %s sec", response, time.time()-start)
 
         response = jsonpickle.decode(response.text)
@@ -103,9 +111,7 @@ class FaceDetectorProxy(FaceDetector):
         return face_bboxes, det_scores, landmarks, embeddings
 
 
-    def run_age_gender_api(self,
-        embeddings: list, url_age_gender: str = "http://127.0.0.1:10003/"
-    ) -> tuple:
+    def run_age_gender_api(self, embeddings: list) -> tuple:
         # -1 accounts for the batch size.
         data = np.array(embeddings).reshape(-1, 512).astype(np.float32)
         data = pickle.dumps(data)
@@ -114,7 +120,7 @@ class FaceDetectorProxy(FaceDetector):
         data = jsonpickle.encode(data)
         logger.debug(f"sending embeddings to server ...")
         start = time.time()
-        response = requests.post(url_age_gender, json=data)
+        response = requests.post(self._age_gender_url, json=data)
         logger.info("got %s from server in %s sec", response, time.time()-start)
 
         response = jsonpickle.decode(response.text)
@@ -123,13 +129,9 @@ class FaceDetectorProxy(FaceDetector):
 
         return ages, genders
 
-    def detect_faces(self,
-        image: np.ndarray,
-        url_face: str = "http://127.0.0.1:10002/",
-        url_age_gender: str = "http://127.0.0.1:10003/",
-    ) -> Tuple[FaceInfo]:
-        face_bboxes, det_scores, landmarks, embeddings = self.run_face_api({"image": self.to_binary_image(image)}, url_face)
+    def detect_faces(self, image: np.ndarray) -> Tuple[FaceInfo]:
+        face_bboxes, det_scores, landmarks, embeddings = self.run_face_api({"image": self.to_binary_image(image)})
 
-        ages, genders = self.run_age_gender_api(embeddings, url_age_gender)
+        ages, genders = self.run_age_gender_api(embeddings)
 
         return tuple(FaceInfo(*info) for info in zip(genders, ages, face_bboxes, embeddings))
