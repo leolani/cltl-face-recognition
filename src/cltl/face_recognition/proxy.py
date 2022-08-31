@@ -25,29 +25,35 @@ FaceInfo = namedtuple('FaceInfo', ('gender',
 
 
 class FaceDetectorProxy(FaceDetector):
-    def __init__(self):
-        self.detect_infra = DockerInfra('tae898/face-detection-recognition', 10002, 10002, False, 15)
-        self.age_gender_infra = DockerInfra('tae898/age-gender', 10003, 10003, False, 15)
+    def __init__(self, start_infra: bool = True):
+        if start_infra:
+            self.detect_infra = DockerInfra('tae898/face-detection-recognition', 10002, 10002, False, 15)
+            self.age_gender_infra = DockerInfra('tae898/age-gender', 10003, 10003, False, 15)
+        else:
+            self.detect_infra = None
+            self.age_gender_infra = None
 
     def __enter__(self):
-        executor = ThreadPoolExecutor(max_workers=2)
-        detect = executor.submit(self.detect_infra.__enter__)
-        age_gender = executor.submit(self.age_gender_infra.__enter__)
+        if self.detect_infra:
+            executor = ThreadPoolExecutor(max_workers=2)
+            detect = executor.submit(self.detect_infra.__enter__)
+            age_gender = executor.submit(self.age_gender_infra.__enter__)
 
-        detect.result()
-        age_gender.result()
-        executor.shutdown()
+            detect.result()
+            age_gender.result()
+            executor.shutdown()
 
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        executor = ThreadPoolExecutor(max_workers=2)
-        detect = executor.submit(lambda: self.detect_infra.__exit__(exc_type, exc_val, exc_tb))
-        age_gender = executor.submit(lambda: self.age_gender_infra.__exit__(exc_type, exc_val, exc_tb))
+        if self.detect_infra:
+            executor = ThreadPoolExecutor(max_workers=2)
+            detect = executor.submit(lambda: self.detect_infra.__exit__(exc_type, exc_val, exc_tb))
+            age_gender = executor.submit(lambda: self.age_gender_infra.__exit__(exc_type, exc_val, exc_tb))
 
-        detect.result()
-        age_gender.result()
-        executor.shutdown()
+            detect.result()
+            age_gender.result()
+            executor.shutdown()
 
     def detect(self, image: np.ndarray) -> Tuple[Iterable[Face], Iterable[Bounds]]:
         logger.info("Processing image %s", image.shape)
